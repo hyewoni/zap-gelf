@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -37,6 +38,12 @@ const (
 
 	// CompressionZlib use zlib compression.
 	CompressionZlib = 2
+
+	// DefaultBufferSize is default buffer size.
+	DefaultBufferSize = 8192
+
+	// DefaultFlushInterval is default flush interval.
+	DefaultFlushInterval = 1 * time.Second
 )
 
 type (
@@ -56,6 +63,7 @@ type (
 		writeSyncers     []zapcore.WriteSyncer
 		compressionType  int
 		compressionLevel int
+		synchronous      bool
 	}
 
 	// optionFunc wraps a func so it satisfies the Option interface.
@@ -142,7 +150,7 @@ func NewCore(options ...Option) (_ zapcore.Core, err error) {
 
 	var core = zapcore.NewCore(
 		zapcore.NewJSONEncoder(conf.encoder),
-		zapcore.AddSync(w),
+		zapWriteSyncer(w, conf.synchronous),
 		conf.enabler,
 	)
 
@@ -338,6 +346,14 @@ func CompressionLevel(value int) Option {
 	})
 }
 
+// Synchronous set GELF Synchronous status.
+func Synchronous(value bool) Option {
+	return optionFunc(func(conf *optionConf) error {
+		conf.synchronous = value
+		return nil
+	})
+}
+
 // Write implements io.Writer.
 func (w *writer) Write(buf []byte) (n int, err error) {
 	var (
@@ -359,7 +375,7 @@ func (w *writer) Write(buf []byte) (n int, err error) {
 	}
 
 	if n, err = cw.Write(buf); err != nil {
-		return n, err
+		return len(buf), err
 	}
 
 	cw.Close()
@@ -378,6 +394,10 @@ func (w *writer) Write(buf []byte) (n int, err error) {
 	}
 
 	return n, nil
+}
+
+func (w writer) Sync() error {
+	return nil
 }
 
 // Close implementation of io.WriteCloser.
@@ -540,4 +560,16 @@ func (w *writer) writeChunked(count int, cBytes []byte) (n int, err error) {
 	}
 
 	return len(cBytes), nil
+}
+
+func zapWriteSyncer(w zapcore.WriteSyncer, sync bool) zapcore.WriteSyncer {
+	if sync {
+		return w
+	}
+
+	return &zapcore.BufferedWriteSyncer{
+		WS:            w,
+		Size:          DefaultChunkSize * DefaultBufferSize,
+		FlushInterval: DefaultFlushInterval,
+	}
 }

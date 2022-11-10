@@ -231,3 +231,12 @@ func TestCompressionLevel(t *testing.T) {
 	assert.Nil(t, err, "Unexpected error")
 	assert.Implements(t, (*zapcore.Core)(nil), core, "Expect zapcore.Core")
 }
+
+func TestSynchronous(t *testing.T) {
+	var core, err = gelf.NewCore(
+		gelf.Synchronous(false),
+	)
+
+	assert.Nil(t, err, "Unexpected error")
+	assert.Implements(t, (*zapcore.Core)(nil), core, "Expect zapcore.Core")
+}
