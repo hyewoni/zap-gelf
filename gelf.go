@@ -7,12 +7,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"io"
 	"net"
 	"time"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -76,6 +75,10 @@ type (
 		chunkDataSize    int
 		compressionType  int
 		compressionLevel int
+	}
+
+	bufferedWriter struct {
+		*writer
 	}
 
 	// implement io.WriteCloser.
@@ -396,8 +399,15 @@ func (w *writer) Write(buf []byte) (n int, err error) {
 	return n, nil
 }
 
-func (w writer) Sync() error {
+func (w *writer) Sync() error {
 	return nil
+}
+
+func (w *bufferedWriter) Write(buf []byte) (n int, err error) {
+	if n, err = w.writer.Write(buf); err != nil {
+		return n, err
+	}
+	return len(buf), nil
 }
 
 // Close implementation of io.WriteCloser.
@@ -562,13 +572,13 @@ func (w *writer) writeChunked(count int, cBytes []byte) (n int, err error) {
 	return len(cBytes), nil
 }
 
-func zapWriteSyncer(w zapcore.WriteSyncer, sync bool) zapcore.WriteSyncer {
+func zapWriteSyncer(w *writer, sync bool) zapcore.WriteSyncer {
 	if sync {
 		return w
 	}
 
 	return &zapcore.BufferedWriteSyncer{
-		WS:            w,
+		WS:            &bufferedWriter{w},
 		Size:          DefaultChunkSize * DefaultBufferSize,
 		FlushInterval: DefaultFlushInterval,
 	}
